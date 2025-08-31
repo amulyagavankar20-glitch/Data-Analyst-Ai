@@ -1,112 +1,53 @@
 import streamlit as st
 import pandas as pd
+import seaborn as sns
 import matplotlib.pyplot as plt
 
 from chatbot import chatbot_sidebar
 
-st.session_state["page_name"] = "Data_Visualisation"
+st.session_state["page_name"] = "Data Visualization"
 
-st.title("📊 Exploratory Data Analysis (EDA)")
+st.set_option("client.showErrorDetails", True)
 
-# -------------------------
-# Load Dataset
-# -------------------------
-if "dataset" not in st.session_state:
-    st.warning("⚠️ Please upload and clean your dataset first.")
-    st.stop()
+st.title("📊 Data Visualization")
 
-df = st.session_state["dataset"]
 
-st.subheader("📊 Dataset Preview")
-st.dataframe(df.head(50))  # Just preview first 50 rows
-
-st.write(f"Showing first 50 rows out of {df.shape[0]} rows.")
-st.download_button(
-    "⬇ Download Full Dataset",
-    df.to_csv(index=False),
-    "dataset.csv",
-    "text/csv"
+st.markdown(
+    """
+    <style>
+    .scrollable-table { overflow-x: auto; }
+    </style>
+    """,
+    unsafe_allow_html=True
 )
 
-# Keep your visualization code as is (charts still use full df)
+if "dataset" in st.session_state:
+    df = st.session_state["dataset"]
 
+    # ---- Quick stats
+    st.caption(f"Rows: {df.shape[0]} | Columns: {df.shape[1]}")
+    num_cols = df.select_dtypes(include=["int64", "float64"]).columns.tolist()
+    cat_cols = df.select_dtypes(exclude=["int64", "float64"]).columns.tolist()
+    st.caption(f"Numeric: {len(num_cols)} | Categorical: {len(cat_cols)}")
 
-# -------------------------
-# Summary Statistics
-# -------------------------
-st.subheader("📌 Summary Statistics")
-st.write(df.describe(include="all"))
+    # ---- Dataset preview (scrollable)
+    st.subheader("🔍 Dataset Preview")
+    with st.container():
+        st.markdown('<div class="scrollable-table">', unsafe_allow_html=True)
+        st.dataframe(df, use_container_width=True, height=420)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-# -------------------------
-# 1. Histogram
-# -------------------------
-st.subheader("📈 Histogram")
-column = st.selectbox("Select a column", df.columns, key="hist")
-if column:
-    fig, ax = plt.subplots()
-    df[column].hist(ax=ax, bins=20, color="skyblue", edgecolor="black")
-    ax.set_title(f"Histogram of {column}")
-    ax.set_xlabel(column)
-    ax.set_ylabel("Frequency")
-    st.pyplot(fig)
+    # ---- Correlation Heatmap (if numeric)
+    if len(num_cols) > 1:
+        st.subheader("📌 Correlation Heatmap")
+        corr = df[num_cols].corr(numeric_only=True)
+        fig, ax = plt.subplots(figsize=(10, 6))
+        sns.heatmap(corr, annot=True, cmap="coolwarm", ax=ax)
+        st.pyplot(fig)
+    else:
+        st.info("Not enough numeric columns for a correlation heatmap.")
 
-# -------------------------
-# 2. Boxplot
-# -------------------------
-st.subheader("📦 Boxplot (Detect Outliers)")
-box_col = st.selectbox("Select numeric column", df.select_dtypes(include="number").columns, key="box")
-if box_col:
-    fig, ax = plt.subplots()
-    ax.boxplot(df[box_col].dropna())
-    ax.set_title(f"Boxplot of {box_col}")
-    ax.set_ylabel(box_col)
-    st.pyplot(fig)
-
-# -------------------------
-# 3. Scatter Plot
-# -------------------------
-st.subheader("⚖️ Scatter Plot (Relationship)")
-col_x = st.selectbox("X-axis (Numeric)", df.select_dtypes(include="number").columns, key="scatter_x")
-col_y = st.selectbox("Y-axis (Numeric)", df.select_dtypes(include="number").columns, key="scatter_y")
-if col_x and col_y:
-    fig, ax = plt.subplots()
-    ax.scatter(df[col_x], df[col_y], alpha=0.6, color="purple")
-    ax.set_xlabel(col_x)
-    ax.set_ylabel(col_y)
-    ax.set_title(f"{col_x} vs {col_y}")
-    st.pyplot(fig)
-
-# -------------------------
-# 4. Bar Chart (Categorical Count)
-# -------------------------
-st.subheader("📊 Bar Chart (Category Counts)")
-cat_col = st.selectbox("Select categorical column", df.select_dtypes(exclude="number").columns, key="bar")
-if cat_col:
-    counts = df[cat_col].value_counts()
-    fig, ax = plt.subplots()
-    counts.plot(kind="bar", ax=ax, color="orange", edgecolor="black")
-    ax.set_title(f"Count of {cat_col}")
-    ax.set_xlabel(cat_col)
-    ax.set_ylabel("Count")
-    st.pyplot(fig)
-
-# -------------------------
-# 5. Correlation Heatmap
-# -------------------------
-st.subheader("🔥 Correlation Heatmap")
-if len(df.select_dtypes(include="number").columns) > 1:
-    fig, ax = plt.subplots(figsize=(6, 4))
-    corr = df.corr(numeric_only=True)
-    im = ax.imshow(corr, cmap="coolwarm", aspect="auto")
-    ax.set_xticks(range(len(corr)))
-    ax.set_yticks(range(len(corr)))
-    ax.set_xticklabels(corr.columns, rotation=45, ha="right")
-    ax.set_yticklabels(corr.columns)
-    fig.colorbar(im)
-    ax.set_title("Correlation Heatmap")
-    st.pyplot(fig)
 else:
-    st.info("Need at least 2 numeric columns for correlation heatmap.")
-
+    st.warning("⚠️ Please upload a dataset first.")
 
 chatbot_sidebar()
