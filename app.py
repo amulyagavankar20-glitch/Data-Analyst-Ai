@@ -82,7 +82,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ===== Title =====
-st.markdown("<h1 class='main-title'>🚀 AI Data Scientist Agent</h1>", unsafe_allow_html=True)
+st.markdown("<h1 class='main-title'>🚀 AI Data Science Agent</h1>", unsafe_allow_html=True)
 st.markdown("<p class='subtitle'>Your end-to-end assistant for Data Cleaning, Analysis, Modeling, and Reporting 📊</p>", unsafe_allow_html=True)
 
 # ===== Cards =====
