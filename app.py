@@ -5,12 +5,20 @@ from dotenv import load_dotenv
 
 # Import our new graph
 # Ensure src is in path if needed, though Streamlit usually adds root
+import sys
 try:
+    # Ensure Current Directory is in Path (Crucial for Streamlit Cloud)
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if current_dir not in sys.path:
+        sys.path.append(current_dir)
+
     from src.agents.graph import app as agent_app
     from src.agents.utils import AgentState
     from langchain_core.messages import HumanMessage, AIMessage
-except ImportError:
-    st.error("Could not import agent modules. Please check your python path.")
+except ImportError as e:
+    st.error(f"❌ Import Error: {e}")
+    st.info("💡 Tip: Ensure 'src' folder exists and 'langchain_core' is in requirements.txt.")
+    st.stop()
 
 load_dotenv()
 
