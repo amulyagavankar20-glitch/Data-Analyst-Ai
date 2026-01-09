@@ -2,9 +2,28 @@ import streamlit as st
 import pandas as pd
 import os
 from dotenv import load_dotenv
+load_dotenv()
 
-# Import our new graph
-# Ensure src is in path if needed, though Streamlit usually adds root
+# --- 1. PRE-IMPORT CHECK ---
+# We check for the API key BEFORE importing the graph to avoid crashes during import
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+
+if not GROQ_API_KEY:
+    st.error("🔑 **GROQ_API_KEY is missing!**")
+    st.markdown("""
+    To fix this on Streamlit Cloud:
+    1. Go to your **Streamlit Dashboard**.
+    2. Click on the **'...'** (three dots) next to your app.
+    3. Select **Settings** > **Secrets**.
+    4. Add your key in this format:
+    ```toml
+    GROQ_API_KEY = "your_key_here"
+    ```
+    """)
+    st.info("If you are running locally, ensure your `.env` file contains `GROQ_API_KEY`.")
+    st.stop()
+
+# --- 2. IMPORT MODULES ---
 import sys
 try:
     # Ensure root directory is in sys.path
@@ -22,8 +41,6 @@ except ImportError as e:
     st.write(f"Debug Info - Root Path: {root_path}")
     st.info("💡 Tip: Ensure 'src' folder exists in your GitHub repo root and contains __init__.py.")
     st.stop()
-
-load_dotenv()
 
 st.set_page_config(page_title="AI Data Analyst", page_icon="🤖", layout="wide")
 
