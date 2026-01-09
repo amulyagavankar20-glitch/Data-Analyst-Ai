@@ -13,9 +13,15 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Initialize LLM
+api_key = os.getenv("GROQ_API_KEY")
+if not api_key:
+    # Fallback placeholder to allow import without crashing, 
+    # but app.py should have already stopped execution.
+    api_key = "MISSING"
+
 llm = ChatGroq(
     model="llama-3.1-8b-instant",
-    api_key=os.getenv("GROQ_API_KEY"),
+    api_key=api_key,
     temperature=0
 )
 
