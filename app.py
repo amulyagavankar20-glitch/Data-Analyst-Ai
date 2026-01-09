@@ -7,17 +7,20 @@ from dotenv import load_dotenv
 # Ensure src is in path if needed, though Streamlit usually adds root
 import sys
 try:
-    # Ensure Current Directory is in Path (Crucial for Streamlit Cloud)
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    if current_dir not in sys.path:
-        sys.path.append(current_dir)
+    # Ensure root directory is in sys.path
+    root_path = os.path.dirname(os.path.abspath(__file__))
+    if root_path not in sys.path:
+        sys.path.insert(0, root_path)
 
     from src.agents.graph import app as agent_app
     from src.agents.utils import AgentState
     from langchain_core.messages import HumanMessage, AIMessage
 except ImportError as e:
     st.error(f"❌ Import Error: {e}")
-    st.info("💡 Tip: Ensure 'src' folder exists and 'langchain_core' is in requirements.txt.")
+    st.write(f"Debug Info - Current Path: {os.getcwd()}")
+    st.write(f"Debug Info - Python Path: {sys.path}")
+    st.write(f"Debug Info - Root Path: {root_path}")
+    st.info("💡 Tip: Ensure 'src' folder exists in your GitHub repo root and contains __init__.py.")
     st.stop()
 
 load_dotenv()
