@@ -8,19 +8,17 @@ load_dotenv()
 # We check for the API key BEFORE importing the graph to avoid crashes during import
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-if not GROQ_API_KEY:
-    st.error("🔑 **GROQ_API_KEY is missing!**")
+if not GROQ_API_KEY or not os.getenv("FIREBASE_API_KEY"):
+    st.error("🔑 **API Keys are missing!**")
     st.markdown("""
-    To fix this on Streamlit Cloud:
-    1. Go to your **Streamlit Dashboard**.
-    2. Click on the **'...'** (three dots) next to your app.
-    3. Select **Settings** > **Secrets**.
-    4. Add your key in this format:
-    ```toml
-    GROQ_API_KEY = "your_key_here"
-    ```
+    To fix this on your Hosting Platform (Hugging Face or Streamlit Cloud):
+    1. Go to your **App Settings**.
+    2. Find the **Secrets** or **Variables** section.
+    3. Add the following keys:
+       - `GROQ_API_KEY` = `your_groq_key`
+       - `FIREBASE_API_KEY` = `your_firebase_key`
     """)
-    st.info("If you are running locally, ensure your `.env` file contains `GROQ_API_KEY`.")
+    st.info("If you are running locally, ensure your `.env` file contains both keys.")
     st.stop()
 
 # --- 2. IMPORT MODULES ---

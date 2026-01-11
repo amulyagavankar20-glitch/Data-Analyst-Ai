@@ -31,3 +31,7 @@ huggingface-hub
 # Extra (to avoid common issues)
 openpyxl   # for Excel file support
 pyyaml     # sometimes needed by langchain
+
+# Authentication
+firebase-admin
+requests
