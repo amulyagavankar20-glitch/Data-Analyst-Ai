@@ -1,5 +1,6 @@
 # Core framework
 streamlit
+requests
 
 # Data handling
 pandas
@@ -21,6 +22,8 @@ python-dotenv
 # LangChain & Groq
 langchain
 langchain-groq
+langgraph
+langchain-experimental
 
 # Hugging Face Hub (optional, but good to have)
 huggingface-hub
