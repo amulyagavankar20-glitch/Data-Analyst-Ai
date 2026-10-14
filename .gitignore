@@ -1,8 +1,9 @@
 # Environment
 .env
 .env.local
-!.env.example
 .env.*
+!.env.example
+postgres.env
 
 # Python
 __pycache__/
@@ -34,6 +35,8 @@ ENV/
 
 # Streamlit
 .streamlit/
+!.streamlit/
+!.streamlit/config.toml
 
 # OS
 .DS_Store

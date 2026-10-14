@@ -1,37 +1,12 @@
-# Core framework
-streamlit
-requests
-
-# Data handling
-pandas
-numpy
-
-# Visualization
-matplotlib
-seaborn
-
-# Machine Learning
-scikit-learn
-
-# Report generation
-reportlab
-
-# Environment variables
-python-dotenv
-
-# LangChain & Groq
-langchain
-langchain-groq
-langgraph
-langchain-experimental
-
-# Hugging Face Hub (optional, but good to have)
-huggingface-hub
-
-# Extra (to avoid common issues)
-openpyxl   # for Excel file support
-pyyaml     # sometimes needed by langchain
-
-# Authentication
-firebase-admin
-requests
+streamlit==1.41.1
+pandas==2.2.3
+numpy==1.26.4
+plotly==5.24.1
+python-dotenv==1.0.1
+argon2-cffi==23.1.0
+psycopg[binary]==3.2.4
+langchain==0.3.19
+langchain-core==0.3.40
+langchain-groq==0.2.4
+langgraph==0.2.74
+openpyxl==3.1.5

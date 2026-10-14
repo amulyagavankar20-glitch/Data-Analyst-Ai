@@ -9,7 +9,11 @@ class AgentState(TypedDict):
     code: str
     code_output: str
     explanation: str
-    figures: List[object] # Matplotlib figures
+    charts: List[object] # Interactive Plotly figures
     dataframe: object # The actual pandas DataFrame
     error: str # Error message from execution if any
     retry_count: int # To prevent infinite loops
+    retry_history: List[dict]
+    intent: str
+    analysis_failed: bool
+    share_values: bool

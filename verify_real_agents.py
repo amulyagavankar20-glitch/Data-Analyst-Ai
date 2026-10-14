@@ -34,7 +34,7 @@ initial_state = {
     "code": "",
     "code_output": "",
     "explanation": "",
-    "figures": []
+    "charts": []
 }
 
 print("Invoking graph with REAL LLM calls (Groq)...")
@@ -50,7 +50,7 @@ try:
     print("-" * 20)
     print("Explanation:", result['explanation'])
     print("-" * 20)
-    if result['figures']:
-        print(f"Captured {len(result['figures'])} figures.")
+    if result['charts']:
+        print(f"Captured {len(result['charts'])} interactive Plotly charts.")
 except Exception as e:
     print(f"Graph execution failed: {e}")

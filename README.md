@@ -1,178 +1,110 @@
-<div align="center">
+# AI Data Analyst
 
-# AI Data Analyst Agent
-### Autonomous Multi-Agent System for Natural Language Data Analysis
+Streamlit application for asking questions about uploaded CSV and Excel datasets. It uses PostgreSQL for user accounts and sessions, a LangGraph workflow with Groq for analysis planning and code generation, and a disposable Docker worker to execute generated Python.
 
-<img src="https://img.shields.io/badge/Python-3.9+-blue.svg" alt="Python Version"/>
-<img src="https://img.shields.io/badge/Streamlit-1.49.1-FF4B4B.svg?logo=streamlit" alt="Streamlit"/>
-<img src="https://img.shields.io/badge/LangGraph-Agent_Workflow-black.svg" alt="LangGraph"/>
-<img src="https://img.shields.io/badge/LLM-Groq_Llama_3.1-orange.svg" alt="Groq"/>
-<img src="https://img.shields.io/badge/Auth-Firebase-FFCA28.svg?logo=firebase" alt="Firebase"/>
-<img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"/>
+## Security and execution requirements
 
-</div>
+The analysis worker is a separate container. It receives only the requested code and a JSON copy of the current DataFrame. It has no network, no host filesystem mounts, a read-only root filesystem, a non-root user, dropped Linux capabilities, and limits of 512 MB RAM, one CPU, 64 processes, and 25 seconds. Output is capped. A failed analysis does not commit DataFrame changes.
 
----
-
-## Overview
-
-**AI Data Analyst Agent** is a production-style autonomous data science application that replaces manual Pandas scripting with natural language interaction. Users upload a structured dataset (CSV/XLSX) and converse with a 5-node **LangGraph** multi-agent system that plans, writes, executes, and self-corrects Python analysis code in real time — then explains the results in plain English.
-
-The system was designed to demonstrate **end-to-end agentic engineering**: intent routing, plan synthesis, sandboxed code execution, automatic error recovery, and secure multi-user session handling — all deployed behind a live Streamlit interface.
-
-**Live Demo:** *[add deployment link]*
-**Repo:** [github.com/amulyagavankar20-glitch/Data-Analyst-Ai](https://github.com/amulyagavankar20-glitch/Data-Analyst-Ai)
-
----
-
-## Key Highlights (Resume-Ready)
-
-- Architected a **5-node LangGraph agent pipeline** (Query → Planner → Codegen → Executor → Explainer) that autonomously translates natural language into executable data analysis code, replacing manual EDA workflows.
-- Implemented a **self-healing execution sandbox** that intercepts runtime exceptions during isolated `exec()` calls and routes them back to the Coder agent for automatic debugging, cutting failed-query rate through up to 3 auto-retry cycles.
-- Built **automated EDA validation** that runs on every file upload — detecting schema anomalies, missing values, and duplicate records without user intervention.
-- Integrated **Firebase REST authentication** with session-persistent state management across Streamlit reruns, enabling secure multi-user access.
-- Engineered dynamic **Matplotlib/Seaborn visualization generation**, where chart code is authored entirely by the LLM and streamed directly to the frontend.
-- Deployed the full stack via **Docker**, with environment-based secrets management for API credentials.
-
----
-
-## System Architecture
-
-A finite state machine (`src/agents/graph.py`) governs agent routing and self-correction:
-
-```mermaid
-flowchart TD
-    A[User Chat Input] --> B{Query Engine<br/>Intent Recognition}
-
-    B -- general chat --> G[Direct Reply]
-    B -- data query --> C[Planner Agent<br/>Schema + Algorithm Synthesis]
-
-    C --> D[Codegen Agent<br/>Pandas / NumPy Code Generation]
-    D --> E[Execution Sandbox<br/>Isolated exec Runtime]
-
-    E -- exception --> D
-    E -- success --> F[Explainer Agent<br/>Insight Extraction & Summary]
-
-    F --> H[Final Response<br/>Streamlit Chat UI]
-    G --> H
-
-    style E fill:#fff3cd,stroke:#856404
-    style D fill:#d1ecf1,stroke:#0c5460
-    style F fill:#d4edda,stroke:#155724
-```
-
-*Self-correction loop: on runtime exception, the sandbox routes the error back to the Codegen agent for automatic debugging (up to 3 retries) before falling through to the Explainer.*
-
-### Agent Responsibilities
-
-| Node | Function | Core Responsibility |
-|---|---|---|
-| **Query Engine** | `query_node` | Classifies user intent — routes between general chat and data-analysis queries |
-| **Planner Agent** | `planner_node` | Synthesizes dataset schema (dtypes, distributions) into a concrete multi-step execution plan |
-| **Codegen Agent** | `codegen_node` | Translates the plan into syntactically verified Pandas/NumPy code |
-| **Execution Sandbox** | `executor_node` | Runs generated code in an isolated `exec()` context; captures stdout, state mutations, and exceptions |
-| **Explainer Agent** | `explainer_node` | Converts raw execution output into a human-readable analytical summary |
-
----
-
-## Core Features
-
-- **Multi-Agent Orchestration:** Custom LangGraph state machine coordinating 5 specialized agents to solve multi-step analytical reasoning tasks that a single LLM call cannot reliably handle.
-- **Self-Healing Code Execution:** Runtime exceptions inside the sandbox are caught and fed back into the Coder agent with error context, enabling automatic debugging and code rewriting (up to 3 retries) without user intervention.
-- **Automated Data Validation:** Every uploaded dataset is immediately profiled for schema anomalies, missing values, and duplicate records before any query is run.
-- **Dynamic Visualization:** Matplotlib/Seaborn charts are generated on-the-fly by LLM-authored code and rendered directly in the chat interface — no predefined chart templates.
-- **Secure Session Management:** Firebase REST API handles authentication and preserves session state across Streamlit reruns, supporting concurrent multi-user access.
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Frontend | Streamlit (custom CSS) |
-| Agent Orchestration | LangChain, LangGraph |
-| LLM Inference | Groq Cloud — `llama-3.1-8b-instant` |
-| Data Processing | Pandas, NumPy |
-| Visualization | Matplotlib, Seaborn |
-| Auth & Session | Firebase Admin / REST API |
-| Deployment | Docker |
-
----
-
-## Repository Structure
-
-```
-Data-Analyst-Ai/
-├── app.py                     # Streamlit UI and application loop
-├── Dockerfile                 # Containerization spec
-├── requirements.txt           # Dependencies
-└── src/
-    ├── auth.py                # Firebase authentication handlers
-    └── agents/
-        ├── graph.py            # LangGraph FSM definitions
-        └── utils.py            # Agent state class & utilities
-```
-
----
-
-## Setup & Installation
-
-### Prerequisites
-- **Groq API key** — [console.groq.com](https://console.groq.com/)
-- **Firebase Web API key** — for authentication
-
-### Steps
+The app requires access to PostgreSQL, a Docker daemon, and the `ai-data-analyst-executor:latest` image. The worker image must be built before starting the app:
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/amulyagavankar20-glitch/Data-Analyst-Ai.git
-cd Data-Analyst-Ai
+docker build -f Dockerfile.executor -t ai-data-analyst-executor:latest .
+```
 
-# 2. Create a virtual environment
-python -m venv venv
-source venv/bin/activate   # On Windows: venv\Scripts\activate
+For the app itself, use Python 3.10 or 3.12 and install pinned dependencies:
 
-# 3. Install dependencies
+```bash
+conda create -n agentic python=3.10 -y
+conda activate agentic
 pip install -r requirements.txt
+```
 
-# 4. Configure environment variables (.env)
-echo "GROQ_API_KEY=your_groq_api_key_here" >> .env
-echo "FIREBASE_API_KEY=your_firebase_api_key_here" >> .env
+### Start local PostgreSQL
 
-# 5. Run the app
+Create a `postgres.env` file (git-ignored) with local database credentials:
+
+```text
+POSTGRES_DB=analyst_auth
+POSTGRES_USER=analyst
+POSTGRES_PASSWORD=chooseAlongLocalPassword123
+```
+
+You can copy `postgres.env.example` as a starting point, then replace the placeholder password with a long alphanumeric value.
+
+Start PostgreSQL in Docker with a persistent volume:
+
+```powershell
+docker run --name analyst-auth-db --restart unless-stopped -p 127.0.0.1:5432:5432 `
+  --env-file postgres.env -v analyst-auth-data:/var/lib/postgresql/data -d postgres:16
+```
+
+Copy `.env.example` to `.env` and set the app settings:
+
+```text
+GROQ_API_KEY=your_groq_key
+GROQ_MODEL=openai/gpt-oss-20b
+DATABASE_URL=postgresql://analyst:chooseAlongLocalPassword123@localhost:5432/analyst_auth
+```
+
+The app applies [`schema.sql`](schema.sql) at startup to create `auth_users` and `auth_sessions`. The configured database role needs permission to create tables and indexes in the target schema. For a remote database, use a TLS-verified connection URL and keep port 5432 private.
+
+### Run the app
+
+Then start Streamlit:
+
+```bash
 streamlit run app.py
 ```
 
-### Docker
+When running the app in Docker, the app container needs access to the Docker daemon socket so it can launch the isolated worker. This grants the app process control of that daemon; generated analysis code is never given the socket. Mount the host socket only in a deployment where the app is trusted, and never mount it into the executor container.
+
+The worker image is independent of the application image. Build it on the same Docker daemon that the app uses. Set `ANALYSIS_EXECUTOR_IMAGE` if you use a different image tag.
+
+For a containerized app, build both images and pass the Docker socket to the trusted app container:
 
 ```bash
-docker build -t ai-data-analyst .
-docker run -p 8501:8501 --env-file .env ai-data-analyst
+docker build -f Dockerfile.executor -t ai-data-analyst-executor:latest .
+docker build -t ai-data-analyst-app .
+docker run --rm -p 8501:8501 --env-file .env.docker \
+  -v /var/run/docker.sock:/var/run/docker.sock ai-data-analyst-app
 ```
 
----
+Create `.env.docker` from `.env` and change the database host in `DATABASE_URL` from `localhost` to `host.docker.internal`; the local Streamlit process should continue using `localhost`.
 
-## Usage
+## Data handling
 
-1. **Sign in** via the Firebase-authenticated login screen.
-2. **Upload** a `.csv` or `.xlsx` file — the system runs automated EDA and schema validation instantly.
-3. **Ask questions** in natural language, e.g.:
-   - *"Remove empty rows and drop duplicates."*
-   - *"Plot the correlation between Age and Salary."*
-   - *"What's the average transaction value by region?"*
-4. **Inspect agent reasoning** by expanding "View Analysis Steps" to see the generated plan, code, and execution trace.
+- Only authenticated users can upload and process files.
+- CSV and XLSX uploads are limited to 20 MB, 500,000 rows, and 200 columns.
+- Repeated Streamlit reruns do not reload an unchanged file over the working DataFrame.
+- Successful worker results commit the returned DataFrame; failures discard the worker's isolated copy.
+- Generated charts are interactive Plotly visuals with hover details, zoom, pan, responsive sizing, and legend controls. Distribution requests are guided to include both counts and percentages.
+- Column names, types, shape, and the user's query are sent to Groq for analysis. Dataset values, sample rows, and computed result values stay in the app by default. The sidebar checkbox explicitly opts into sharing up to three rows and computed results for model-generated summaries.
+- Passwords are stored as Argon2 hashes. Random session tokens are held server-side, hashed in PostgreSQL, expire after 12 hours, and are checked against the database on reruns.
 
----
+## Workflow
 
-## Roadmap
+1. Classify the request as analysis, general chat, or unsupported.
+2. Plan the analysis and generate code.
+3. Perform syntax and unsafe-construct checks, then execute in the isolated worker.
+4. Retry failed code up to three attempts, then return a terminal failure message.
+5. Explain successful output and display interactive Plotly charts returned by that execution.
 
-- [ ] Add support for SQL-backed datasets (Postgres/BigQuery connectors)
-- [ ] Multi-file / multi-table join reasoning
-- [ ] Persistent conversation memory across sessions
-- [ ] Evaluation harness for code-generation accuracy benchmarking
+The code checks are defense in depth. Container isolation is still required. If Docker or the worker image is unavailable, analysis fails closed.
 
----
+## Development and verification
 
-## License
+Install the application and test dependencies, build the executor image, then run:
 
-MIT
+```bash
+pip install -r requirements-dev.txt
+```
+
+```bash
+pytest
+python verify_graph_step2.py
+```
+
+The verification script uses a mocked LLM and does not require a Groq key. The Docker worker tests require Docker. `verify_real_agents.py` is an optional manual check that makes real Groq requests.
+
+Firebase accounts are not migrated automatically. Users need to register new accounts. Password reset and email verification are not implemented in this app; plan account recovery before exposing registration to a wider audience.

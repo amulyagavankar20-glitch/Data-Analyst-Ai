@@ -1,16 +1,17 @@
-FROM python:3.13.5-slim
+FROM python:3.12.8-slim
 
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y \
-    build-essential \
     curl \
-    git \
+    docker.io \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
 COPY src/ ./src/
+COPY schema.sql .
 COPY app.py .
+COPY .streamlit/ ./.streamlit/
 
 RUN pip3 install -r requirements.txt
 
