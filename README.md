@@ -1,110 +1,167 @@
 # AI Data Analyst
 
-Streamlit application for asking questions about uploaded CSV and Excel datasets. It uses PostgreSQL for user accounts and sessions, a LangGraph workflow with Groq for analysis planning and code generation, and a disposable Docker worker to execute generated Python.
+AI Data Analyst is a Streamlit application for exploring CSV and Excel datasets with natural-language questions. It uses PostgreSQL for accounts and session records, Groq for language-model tasks, and a separately operated isolated worker for generated Python analysis.
 
-## Security and execution requirements
+## What it does
 
-The analysis worker is a separate container. It receives only the requested code and a JSON copy of the current DataFrame. It has no network, no host filesystem mounts, a read-only root filesystem, a non-root user, dropped Linux capabilities, and limits of 512 MB RAM, one CPU, 64 processes, and 25 seconds. Output is capped. A failed analysis does not commit DataFrame changes.
+- Upload and inspect CSV/XLSX tables, review schema and data-quality summaries, and optionally join related tables.
+- Ask questions for analysis, visualization, dataset-grounded advice, or supported dataset changes.
+- Run generated analysis code in a separate worker container with resource limits and no network access.
+- Render interactive Plotly charts, inspect computation details, download a dataset snapshot, or export a notebook.
+- Register and sign in using PostgreSQL-backed accounts. Registration can be restricted with an invite code.
 
-The app requires access to PostgreSQL, a Docker daemon, and the `ai-data-analyst-executor:latest` image. The worker image must be built before starting the app:
+The service does not train or deploy machine-learning models. Its recommendations are guidance based on the metadata provided; they are not evidence that a model was trained or evaluated.
 
-```bash
-docker build -f Dockerfile.executor -t ai-data-analyst-executor:latest .
+## Architecture
+
+```mermaid
+flowchart LR
+    User[Browser] --> App[Streamlit app]
+    App <--> DB[(PostgreSQL<br/>accounts, sessions, quotas)]
+    App <--> Groq[Groq API<br/>selected prompt context]
+    App -->|Bearer token over HTTPS| API[Executor API]
+    API -->|bounded request| Worker[Isolated worker container<br/>no network, resource limits]
+    Worker --> API
+    API --> App
 ```
 
-For the app itself, use Python 3.10 or 3.12 and install pinned dependencies:
+The app does not mount the host Docker socket. The executor service must run on a dedicated host with a verified rootless Docker setup or the gVisor `runsc` runtime. A plain subprocess is not a security boundary. See [Deployment](docs/DEPLOYMENT.md) and [Security and privacy](docs/SECURITY.md).
 
-```bash
-conda create -n agentic python=3.10 -y
-conda activate agentic
-pip install -r requirements.txt
+### Request and analysis flow
+
+```mermaid
+flowchart TD
+    Q[User question] --> Classify[Classify intent]
+    Classify -->|CHAT, ADVISE, unsupported| Direct[Answer from conversation or dataset metadata]
+    Direct --> Done([Return response])
+    Classify -->|ANALYZE or MODIFY| Plan[Plan analysis]
+    Plan --> Code[Generate and validate code]
+    Code --> Execute[Call isolated executor]
+    Execute --> Check{Execution succeeded?}
+    Check -->|No, retries remain| Code
+    Check -->|No retries remain| Failure[Return clear failure]
+    Check -->|Yes| Explain[Explain result and charts]
+    Explain --> Commit{Intent is MODIFY?}
+    Commit -->|Yes| Save[Commit DataFrame version]
+    Commit -->|No| Discard[Keep original DataFrame]
+    Save --> Done
+    Discard --> Done
+    Failure --> Done
 ```
 
-### Start local PostgreSQL
+Only successful modification requests commit a new DataFrame version. Ordinary analysis results and direct advice do not alter the active dataset.
 
-Create a `postgres.env` file (git-ignored) with local database credentials:
+### Deployment topology
 
-```text
-POSTGRES_DB=analyst_auth
-POSTGRES_USER=analyst
-POSTGRES_PASSWORD=chooseAlongLocalPassword123
+```mermaid
+flowchart TB
+    subgraph Public[Public edge]
+        Browser[Browser]
+        Proxy[HTTPS reverse proxy]
+        Browser --> Proxy
+    end
+    subgraph AppNetwork[Private application network]
+        App[Streamlit app container or process]
+        DB[(PostgreSQL)]
+        App --> DB
+    end
+    subgraph ExecutorHost[Dedicated executor host]
+        ExecProxy[TLS or private-network endpoint]
+        API[Executor API]
+        Docker[Docker Engine with runsc or rootless mode]
+        Worker[Short-lived analysis worker]
+        ExecProxy --> API --> Docker --> Worker
+    end
+    Proxy --> App
+    App -->|Authenticated request| ExecProxy
+    App -->|HTTPS prompts| Groq[Groq API]
 ```
 
-You can copy `postgres.env.example` as a starting point, then replace the placeholder password with a long alphanumeric value.
+The executor host is separate from the app and database. Keep its API private, and never mount the Docker socket into the Streamlit app. See [Deployment](docs/DEPLOYMENT.md) for host setup and network controls.
 
-Start PostgreSQL in Docker with a persistent volume:
+## Quick start (Windows / Conda)
 
-```powershell
-docker run --name analyst-auth-db --restart unless-stopped -p 127.0.0.1:5432:5432 `
-  --env-file postgres.env -v analyst-auth-data:/var/lib/postgresql/data -d postgres:16
-```
+Prerequisites: Python 3.12, PostgreSQL, a Groq API key, and an independently configured executor service. The app deliberately fails closed if the executor is unavailable.
 
-Copy `.env.example` to `.env` and set the app settings:
+1. Create the database and apply the versioned migration as described in [Database setup](docs/DEPLOYMENT.md#postgresql-setup).
+2. Copy `.env.example` to `.env` and fill in `GROQ_API_KEY`, `DATABASE_URL`, `ANALYSIS_EXECUTOR_URL`, and `ANALYSIS_EXECUTOR_TOKEN`. Do not commit `.env`.
+3. Install and launch:
 
-```text
-GROQ_API_KEY=your_groq_key
-GROQ_MODEL=openai/gpt-oss-20b
-DATABASE_URL=postgresql://analyst:chooseAlongLocalPassword123@localhost:5432/analyst_auth
-```
+   ```powershell
+   conda create -n agentic python=3.12 -y
+   conda activate agentic
+   python -m pip install -r requirements.txt
+   streamlit run app.py
+   ```
 
-The app applies [`schema.sql`](schema.sql) at startup to create `auth_users` and `auth_sessions`. The configured database role needs permission to create tables and indexes in the target schema. For a remote database, use a TLS-verified connection URL and keep port 5432 private.
+4. Open the local URL printed by Streamlit, create an account, and upload a CSV or XLSX file.
 
-### Run the app
+For a local-only executor development setup, see [Deployment: executor setup](docs/DEPLOYMENT.md#executor-service). Production requires `runsc` or rootless Docker; do not use the CI-only `EXECUTOR_CI_ALLOW_RUNC` override in deployment.
 
-Then start Streamlit:
+## Docker images in this repository
 
-```bash
-streamlit run app.py
-```
+There are two separate images:
 
-When running the app in Docker, the app container needs access to the Docker daemon socket so it can launch the isolated worker. This grants the app process control of that daemon; generated analysis code is never given the socket. Mount the host socket only in a deployment where the app is trusted, and never mount it into the executor container.
+| Image | Build file | Purpose | Needed by |
+|---|---|---|---|
+| `ai-data-analyst:local` | `Dockerfile` | Streamlit web app | App deployment; not required when running Streamlit directly in Conda |
+| `ai-data-analyst-executor:latest` | `Dockerfile.executor` | Isolated generated-code worker | Executor host; required by the executor API |
 
-The worker image is independent of the application image. Build it on the same Docker daemon that the app uses. Set `ANALYSIS_EXECUTOR_IMAGE` if you use a different image tag.
+The executor service references `ai-data-analyst-executor:latest` by default. No project container is currently running, based on the Docker check performed for this documentation update. Keep the executor image if you want analyses to execute. The app image can be removed if you only run the app from Conda and do not need the container build; Docker can rebuild it later.
 
-For a containerized app, build both images and pass the Docker socket to the trusted app container:
+The repository does not include a Compose file. The app and executor are separate services and must not share the Docker socket. Build commands and production configuration are in [Deployment](docs/DEPLOYMENT.md).
 
-```bash
-docker build -f Dockerfile.executor -t ai-data-analyst-executor:latest .
-docker build -t ai-data-analyst-app .
-docker run --rm -p 8501:8501 --env-file .env.docker \
-  -v /var/run/docker.sock:/var/run/docker.sock ai-data-analyst-app
-```
+## Configuration
 
-Create `.env.docker` from `.env` and change the database host in `DATABASE_URL` from `localhost` to `host.docker.internal`; the local Streamlit process should continue using `localhost`.
+See [.env.example](.env.example) for the supported app settings. Main settings:
 
-## Data handling
+| Variable | Purpose |
+|---|---|
+| `GROQ_API_KEY` | Groq credential. Keep it only in the app's secret store or protected environment. |
+| `GROQ_MODEL` | Groq model identifier; defaults to `openai/gpt-oss-20b`. |
+| `DATABASE_URL` | PostgreSQL connection for the least-privilege runtime account. |
+| `ANALYSIS_EXECUTOR_URL` | Base URL of the executor API. Production should use HTTPS. |
+| `ANALYSIS_EXECUTOR_TOKEN` | Shared app-to-executor bearer secret, at least 32 characters. |
+| `ANALYSIS_EXECUTOR_TIMEOUT` | App-side executor request timeout, bounded by the client implementation. |
+| `MAX_DATASET_PARQUET_BYTES` | Optional cap on the normalized in-memory dataset representation. |
+| `DAILY_ANALYSIS_LIMIT` | Per-account daily analysis quota. |
+| `SIGNUP_INVITE_CODE` | Optional invite-only registration secret; blank permits open sign-up. |
 
-- Only authenticated users can upload and process files.
-- CSV and XLSX uploads are limited to 20 MB, 500,000 rows, and 200 columns.
-- Repeated Streamlit reruns do not reload an unchanged file over the working DataFrame.
-- Successful worker results commit the returned DataFrame; failures discard the worker's isolated copy.
-- Generated charts are interactive Plotly visuals with hover details, zoom, pan, responsive sizing, and legend controls. Distribution requests are guided to include both counts and percentages.
-- Column names, types, shape, and the user's query are sent to Groq for analysis. Dataset values, sample rows, and computed result values stay in the app by default. The sidebar checkbox explicitly opts into sharing up to three rows and computed results for model-generated summaries.
-- Passwords are stored as Argon2 hashes. Random session tokens are held server-side, hashed in PostgreSQL, expire after 12 hours, and are checked against the database on reruns.
+Executor settings are documented in [Deployment](docs/DEPLOYMENT.md#executor-service). Never paste secret values into issue reports or logs.
 
-## Workflow
+## Data handling overview
 
-1. Classify the request as analysis, general chat, or unsupported.
-2. Plan the analysis and generate code.
-3. Perform syntax and unsafe-construct checks, then execute in the isolated worker.
-4. Retry failed code up to three attempts, then return a terminal failure message.
-5. Explain successful output and display interactive Plotly charts returned by that execution.
+- Uploads are limited to 20 MB per file, CSV/XLSX, at most 500,000 rows and 200 columns; converted Parquet data is capped at 16 MB by default.
+- Tier 0 shares schema, types, shape, and the question with Groq. Tier 1 also shares a local aggregate profile. Tier 2 may include up to three sample rows and computed output. Choose the lowest tier suitable for your data.
+- Successful modification requests commit a new session DataFrame version. Analysis requests do not commit generated mutations. The app keeps up to five prior versions for undo and supports restoring the uploaded snapshot.
+- Session datasets live in Streamlit session state; they are not durable database records. A browser refresh or server restart can end a session.
+- Notebook export includes code and metadata needed for the workflow, but not dataset values or execution output. Place the separately downloaded dataset beside the notebook before running it.
 
-The code checks are defense in depth. Container isolation is still required. If Docker or the worker image is unavailable, analysis fails closed.
+Read [Security and privacy](docs/SECURITY.md) before handling sensitive data.
 
 ## Development and verification
 
-Install the application and test dependencies, build the executor image, then run:
-
-```bash
-pip install -r requirements-dev.txt
+```powershell
+conda activate agentic
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
+python -m ruff check app.py src executor_service tests
 ```
 
-```bash
-pytest
-python verify_graph_step2.py
-```
+Executor integration tests require Docker and the worker image. They are environment-dependent; unit tests mock the external model and executor where appropriate. See [Development](docs/DEVELOPMENT.md).
 
-The verification script uses a mocked LLM and does not require a Groq key. The Docker worker tests require Docker. `verify_real_agents.py` is an optional manual check that makes real Groq requests.
+## Documentation
 
-Firebase accounts are not migrated automatically. Users need to register new accounts. Password reset and email verification are not implemented in this app; plan account recovery before exposing registration to a wider audience.
+- [Deployment guide](docs/DEPLOYMENT.md): database migration, image builds, runtime configuration, reverse proxy, health checks, and upgrades.
+- [Security and privacy](docs/SECURITY.md): trust boundaries, dataset sharing, executor isolation, and operational safeguards.
+- [Development guide](docs/DEVELOPMENT.md): environment setup, tests, linting, and contribution workflow.
+- [Operations guide](docs/OPERATIONS.md): startup, health checks, backups, logs, and troubleshooting.
+- [Improvement plan](IMPROVEMENT_PLAN.md): broader project roadmap and planned work; items there are not necessarily implemented.
+
+## Current limitations
+
+- Email verification and password recovery are not implemented.
+- PostgreSQL stores accounts, login/session metadata, and usage counts, not uploaded datasets.
+- A production-ready executor requires operator-provisioned `runsc` or rootless Docker and TLS/network controls; a Docker image alone does not provide the complete isolation boundary.
+- Model recommendations are advisory; the system does not automatically train, validate, or deploy a model.
+- Supported formats are CSV and XLSX; multi-sheet Excel imports are treated as separate tables where supported by the upload flow.
