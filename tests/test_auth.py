@@ -71,7 +71,7 @@ def test_password_policy_and_duplicate_registration(monkeypatch):
 
 
 def test_login_rejects_wrong_password_and_logout_revokes_session(monkeypatch):
-    shared = setup_fake_db(monkeypatch)
+    setup_fake_db(monkeypatch)
     auth.sign_up_with_email_and_password("user@example.com", "a-long-password-123")
     invalid = auth.sign_in_with_email_and_password("user@example.com", "wrong-password")
     assert "error" in invalid

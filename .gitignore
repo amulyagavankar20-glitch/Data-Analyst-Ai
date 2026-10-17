@@ -27,6 +27,8 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+.pip-tools-cache/
+.mypy_cache/
 
 # Virtual Environment
 venv/

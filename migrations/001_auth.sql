@@ -15,5 +15,18 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
     CONSTRAINT auth_sessions_expiry_after_creation CHECK (expires_at > created_at)
 );
 
-CREATE INDEX IF NOT EXISTS auth_sessions_expiry_idx
-    ON auth_sessions (expires_at);
+CREATE INDEX IF NOT EXISTS auth_sessions_expiry_idx ON auth_sessions (expires_at);
+
+CREATE TABLE IF NOT EXISTS auth_login_attempts (
+    email TEXT PRIMARY KEY,
+    failures INTEGER NOT NULL DEFAULT 0,
+    locked_until TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS auth_analysis_usage (
+    user_id BIGINT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+    usage_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    request_count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, usage_date)
+);

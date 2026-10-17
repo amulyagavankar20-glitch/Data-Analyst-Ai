@@ -36,7 +36,7 @@ def main():
         "share_values": True,
     }
 
-    def fake_worker(code, dataframe):
+    def fake_worker(code, dataframe, _dataset_blob=None):
         assert "df['Age'].mean()" in code
         return {"output": "37.0", "dataframe": dataframe.copy(), "charts": []}
 

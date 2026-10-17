@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: docker build -f Dockerfile.executor -t ai-data-analyst-executor:latest .
+      - name: Run lint, type, unit, and executor integration checks
+        shell: bash
+        run: |
+          TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+          EXECUTOR_BIND=127.0.0.1 EXECUTOR_RUNTIME=runc EXECUTOR_CI_ALLOW_RUNC=1 ANALYSIS_EXECUTOR_TOKEN="$TOKEN" \
+            nohup python -m executor_service.server >/tmp/analysis-executor.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail http://127.0.0.1:8765/health >/dev/null; then break; fi
+            if [ "$attempt" -eq 30 ]; then break; fi
+            sleep 1
+          done
+          if ! curl --silent --fail http://127.0.0.1:8765/health >/dev/null; then
+            cat /tmp/analysis-executor.log
+            exit 1
+          fi
+          export CI=true ANALYSIS_EXECUTOR_TOKEN="$TOKEN" ANALYSIS_EXECUTOR_URL=http://127.0.0.1:8765
+          ruff check app.py src executor_service tests
+          mypy --follow-imports=skip src/agents/executor.py src/agents/graph.py src/auth.py executor_service/server.py
+          pytest -q
+          python verify_graph_step2.py
+      - run: docker build -t ai-data-analyst-app .
+      - name: Verify app container starts
+        shell: bash
+        run: |
+          docker run -d --rm --name ai-data-analyst-ci -p 127.0.0.1:18501:8501 \
+            -e GROQ_API_KEY=test-key -e DATABASE_URL=postgresql://unused \
+            -e ANALYSIS_EXECUTOR_URL=https://executor.invalid \
+            -e ANALYSIS_EXECUTOR_TOKEN=ci-token-not-used \
+            ai-data-analyst-app
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail http://127.0.0.1:18501/_stcore/health >/dev/null; then
+              docker stop ai-data-analyst-ci >/dev/null
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs ai-data-analyst-ci
+          docker rm --force ai-data-analyst-ci
+          exit 1

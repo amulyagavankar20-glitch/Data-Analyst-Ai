@@ -3,12 +3,13 @@ from unittest.mock import patch
 import pandas as pd
 from langchain_core.messages import AIMessage, HumanMessage
 
-from src.agents.graph import (app, explainer_node, query_node, route_execution,
-                              route_query, validate_code)
+from src.agents.graph import (app, direct_node, explainer_node, query_node,
+                              route_execution, route_query, validate_code)
 
 
 def test_code_validation_allows_basic_analysis():
     assert validate_code("result = df['Age'].mean()\nprint(result)") is None
+    assert validate_code("fig = px.bar(df, x='Age')") is None
 
 
 def test_code_validation_rejects_imports_and_introspection():
@@ -22,6 +23,8 @@ def test_retry_router_retries_only_within_limit():
     assert route_execution({"error": "failure", "retry_count": 1}) == "retry"
     assert route_execution({"error": "failure", "retry_count": 3}) == "failure"
     assert route_execution({"error": None, "retry_count": 1}) == "explain"
+    assert route_execution({"error": "worker unavailable", "error_category": "infrastructure",
+                            "retry_count": 1}) == "failure"
 
 
 def test_greeting_is_routed_to_chat():
@@ -31,6 +34,47 @@ def test_greeting_is_routed_to_chat():
         classified = query_node(state)
     assert classified["intent"] == "CHAT"
     assert route_query({**state, **classified}) == "direct"
+
+
+def test_explicit_modification_intent_routes_to_planning():
+    state = {"messages": [HumanMessage(content="Remove rows with missing values")],
+             "dataset_schema": "Age: int"}
+    fake_llm = type("FakeLLM", (), {"invoke": lambda self, _messages: AIMessage(content="MODIFY")})()
+    with patch("src.agents.graph.llm", fake_llm):
+        classified = query_node(state)
+    assert classified["intent"] == "MODIFY"
+    assert route_query({**state, **classified}) == "planner"
+
+
+def test_dataset_based_machine_learning_recommendation_routes_to_advice():
+    state = {"messages": [HumanMessage(content="Best machine learning models to train on this dataset")],
+             "dataset_schema": "target: Churn; numeric and categorical features"}
+
+    class FakeLLM:
+        def invoke(self, messages):
+            prompt = messages[0].content.lower()
+            assert "machine-learning model families" in prompt
+            assert "asks for a recommendation" in prompt
+            return AIMessage(content="ADVISE")
+
+    with patch("src.agents.graph.llm", FakeLLM()):
+        classified = query_node(state)
+    assert classified["intent"] == "ADVISE"
+    assert route_query({**state, **classified}) == "direct"
+
+
+def test_dataset_advice_uses_schema_without_executor():
+    state = {"intent": "ADVISE", "dataset_schema": "text: string; label: category",
+             "messages": [HumanMessage(content="Which models should I try?")]}
+
+    class FakeLLM:
+        def invoke(self, messages):
+            assert "text: string; label: category" in messages[0].content
+            return AIMessage(content="Start with a TF-IDF logistic regression baseline.")
+
+    with patch("src.agents.graph.llm", FakeLLM()):
+        result = direct_node(state)
+    assert "TF-IDF" in result["explanation"]
 
 
 def test_classifier_failure_does_not_trigger_analysis():
@@ -51,7 +95,7 @@ def test_result_values_are_not_sent_for_summary_without_opt_in():
     state = {"share_values": False, "code_output": "secret result"}
     with patch("src.agents.graph.llm", fake_llm):
         result = explainer_node(state)
-    assert "shown below" in result["explanation"]
+    assert "secret result" in result["explanation"]
 
 
 def test_planner_provider_failure_is_terminal():

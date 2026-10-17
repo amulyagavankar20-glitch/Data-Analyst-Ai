@@ -1,15 +1,17 @@
 """Docker boundary checks; skipped unless the executor image is available locally."""
+import os
 import shutil
 import subprocess
+from pathlib import Path
 
 import pandas as pd
 import pytest
 
-from src.agents.executor import ExecutionError, run_isolated_code
+from src.agents.executor import CodeError, LimitError, run_isolated_code
 
 
 def _executor_available():
-    if not shutil.which("docker"):
+    if not shutil.which("docker") or not os.getenv("ANALYSIS_EXECUTOR_URL"):
         return False
     try:
         return subprocess.run(
@@ -23,6 +25,10 @@ def _executor_available():
 
 
 pytestmark = pytest.mark.skipif(not _executor_available(), reason="Docker executor image/daemon unavailable")
+if os.getenv("CI") and not _executor_available():
+    raise RuntimeError("CI requires Docker and ai-data-analyst-executor:latest")
+if os.getenv("CI") and not os.getenv("ANALYSIS_EXECUTOR_URL"):
+    raise RuntimeError("CI requires the authenticated executor service")
 
 
 def test_dataframe_reassignment_and_multiple_plotly_charts_are_returned():
@@ -42,18 +48,24 @@ def test_dataframe_reassignment_and_multiple_plotly_charts_are_returned():
 
 def test_worker_cannot_read_application_files():
     frame = pd.DataFrame({"x": [1]})
-    with pytest.raises(ExecutionError):
+    assert Path("app.py").is_file()  # Positive control: this file exists on the app host.
+    with pytest.raises(CodeError):
         run_isolated_code("result = pd.read_csv('/app/app.py')", frame)
 
 
 def test_worker_has_no_network_access():
     frame = pd.DataFrame({"x": [1]})
-    with pytest.raises(ExecutionError):
+    with pytest.raises(CodeError):
         run_isolated_code("result = pd.read_csv('https://example.com')", frame)
 
 
 @pytest.mark.slow
 def test_worker_terminates_nonterminating_code():
     frame = pd.DataFrame({"x": [1]})
-    with pytest.raises(ExecutionError):
+    with pytest.raises(LimitError):
         run_isolated_code("while True:\n    pass", frame)
+    remaining = subprocess.run(
+        ["docker", "ps", "-aq", "--filter", "name=analysis-"],
+        capture_output=True, text=True, timeout=5, check=True,
+    ).stdout.strip()
+    assert not remaining
