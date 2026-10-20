@@ -22,6 +22,10 @@ The executor service still depends on host configuration. Operators must:
 
 The worker image is not itself the security boundary. A default `runc` deployment with the test override is for controlled development/CI only.
 
+## Execution evidence and calculation checks
+
+The worker reports input/output shapes and column names, a SHA-256 of the executed code, and column names explicitly present in the code syntax. The column list is not runtime access tracing. Optional `verify` helpers apply fixed row-count, sum/mean/count, grouped aggregate, and ratio operations to the worker's input frame. Their output checks that operation's result; it does not establish that the generated code chose the right target, filters, or interpretation. The UI labels these limitations beside the evidence.
+
 ## Data sent to Groq
 
 The sidebar provides privacy tiers. Tier 0 sends schema, column types, shape, and the user's question. Tier 1 also sends an aggregate profile. Tier 2 can include up to three sample rows and computed results. Column names can themselves contain sensitive information. Select the minimum tier needed and do not upload data unless your organization permits the configured external processing.
@@ -39,7 +43,7 @@ The app does not promise that data is anonymized. Review Groq's current terms an
 
 ## Upload and resource controls
 
-Current application checks cap each file at 20 MiB, datasets at 500,000 rows and 200 columns, and normalized Parquet data at 16 MiB by default. The executor separately limits worker resource use. Reverse proxies and hosting platforms should also set request body, connection, CPU, memory, and concurrency limits appropriate to the deployment.
+Current application checks cap the combined upload at 20 MiB, datasets at 500,000 rows and 200 columns, and normalized Parquet data at 16 MiB by default. Supported formats are CSV, TSV, XLS/XLSX, JSON records/column arrays, JSONL/NDJSON, and Parquet. The executor separately limits worker resource use. Reverse proxies and hosting platforms should also set request body, connection, CPU, memory, and concurrency limits appropriate to the deployment.
 
 ## Incident response
 
