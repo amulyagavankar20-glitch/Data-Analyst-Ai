@@ -17,3 +17,7 @@ class AgentState(TypedDict):
     intent: str
     analysis_failed: bool
     share_values: bool
+    evidence: dict
+    verification: list[dict]
+    clarification: str
+    clarification_context: str
