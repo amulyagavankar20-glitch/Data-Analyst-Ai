@@ -2,12 +2,18 @@ FROM python:3.12.8-slim@sha256:2199a62885a12290dc9c5be3ca0681d367576ab7bf037da12
 
 WORKDIR /app
 
+ENV HOME=/home/analyst PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+
 COPY requirements.txt ./
 COPY src/ ./src/
 COPY app.py .
 COPY .streamlit/ ./.streamlit/
 
-RUN pip3 install -r requirements.txt
+RUN pip3 install --no-cache-dir -r requirements.txt \
+    && groupadd --system --gid 10001 analyst \
+    && useradd --system --uid 10001 --gid analyst --create-home analyst
+
+USER 10001:10001
 
 EXPOSE 8501
 
