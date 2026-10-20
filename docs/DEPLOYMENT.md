@@ -55,7 +55,7 @@ DAILY_ANALYSIS_LIMIT=100
 SIGNUP_INVITE_CODE=<optional; set to enable invite-only registration>
 ```
 
-Generate separate high-entropy secrets for the database password, executor token, and invite code. If open account registration is not desired, set `SIGNUP_INVITE_CODE`. `MAX_DATASET_PARQUET_BYTES` may be set to adjust the normalized dataset cap; the default is 16 MiB. The upload widget has a 20 MiB per-file limit.
+Generate separate high-entropy secrets for the database password, executor token, and invite code. If open account registration is not desired, set `SIGNUP_INVITE_CODE`. `MAX_DATASET_PARQUET_BYTES` may be set to adjust the normalized dataset cap; the default is 16 MiB. The upload widget and application currently cap the combined upload at 20 MiB.
 
 The app uses PostgreSQL to validate sessions on reruns. Streamlit session state contains the uploaded dataset and conversation state, so use a single app replica unless you have configured session affinity. A browser refresh or process restart may end the user's dataset session. Uploaded datasets are not stored in PostgreSQL.
 
