@@ -3,8 +3,6 @@ import hashlib
 import io
 import logging
 import os
-import zipfile
-import csv
 import json
 import time
 import uuid
@@ -13,61 +11,14 @@ import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 from src.data_ops import left_join_tables
+from src.uploads import parse_uploaded_table as _parse_uploaded_table
 
 load_dotenv()
 logger = logging.getLogger(__name__)
 st.set_page_config(page_title="AI Data Analyst", page_icon="A", layout="wide")
 USER_DATA_KEYS = ("df", "original_df", "dataframe_blob", "upload_digest",
                   "dataset_versions", "dataset_revision", "analysis_artifacts",
-                  "pending_prompt", "dataset_dictionaries", "related_tables")
-
-
-def _parse_uploaded_table(raw, filename):
-    """Parse a bounded CSV/XLSX and reject malformed or ambiguous headers."""
-    if filename.lower().endswith(".csv"):
-        reader = csv.reader(io.StringIO(raw.decode("utf-8-sig")))
-        header = next(reader, None)
-        if not header:
-            raise ValueError("The CSV is empty or has no header row.")
-        if len(header) > 200:
-            raise ValueError("Dataset exceeds the 200-column limit.")
-        if len(header) != len(set(header)):
-            raise ValueError("CSV contains duplicate column names.")
-        row_count = sum(1 for _ in reader)
-        if row_count > 500_000:
-            raise ValueError("Dataset exceeds the 500,000-row limit.")
-        frame = pd.read_csv(io.BytesIO(raw), nrows=500_001)
-    else:
-        with zipfile.ZipFile(io.BytesIO(raw)) as archive:
-            members = archive.infolist()
-            if (len(members) > 10_000 or sum(item.file_size for item in members) > 128 * 1024 * 1024
-                    or any(item.file_size > 64 * 1024 * 1024
-                           or (item.compress_size == 0 and item.file_size > 0)
-                           or (item.compress_size and item.file_size / item.compress_size > 200)
-                           for item in members)):
-                raise ValueError("Workbook archive exceeds decompression limits.")
-        import openpyxl
-        workbook = openpyxl.load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
-        sheet = workbook.active
-        if sheet.max_column > 200 or sheet.max_row > 500_001:
-            workbook.close()
-            raise ValueError("Dataset exceeds the 500,000-row or 200-column limit.")
-        header = next(sheet.iter_rows(min_row=1, max_row=1, values_only=True), None) or []
-        workbook.close()
-        cleaned = [item for item in header if item is not None]
-        if len(cleaned) != len(set(cleaned)):
-            raise ValueError("Excel sheet contains duplicate column names.")
-        frame = pd.read_excel(io.BytesIO(raw), nrows=500_001)
-    if frame.empty or len(frame.columns) == 0:
-        raise ValueError("The dataset has no usable rows or columns.")
-    if len(frame) > 500_000 or len(frame.columns) > 200:
-        raise ValueError("Dataset exceeds the 500,000-row or 200-column limit.")
-    if not frame.columns.is_unique:
-        raise ValueError("Dataset contains duplicate column names.")
-    frame = frame.loc[:, ~frame.columns.astype(str).str.startswith("Unnamed:")]
-    if frame.empty or len(frame.columns) == 0:
-        raise ValueError("The dataset has no usable columns.")
-    return frame
+                  "pending_prompt", "pending_churn_question", "dataset_dictionaries", "related_tables")
 
 
 def _notebook_for_session(messages, artifacts):
@@ -223,9 +174,10 @@ with st.sidebar:
     share_values = privacy_tier.startswith("Tier 2")
     st.markdown("#### Dataset")
     uploader_key = f"dataset_upload_{st.session_state.get('upload_widget_version', 0)}"
-    uploaded_files = st.file_uploader("Upload CSV or Excel tables", type=["csv", "xlsx"],
+    upload_formats = ["csv", "tsv", "xlsx", "xls", "json", "jsonl", "ndjson", "parquet"]
+    uploaded_files = st.file_uploader("Upload data tables", type=upload_formats,
                                       accept_multiple_files=True, key=uploader_key,
-                                      help="Up to 5 tables, 20 MB combined; CSV or XLSX.")
+                                      help="Up to 5 tables and 20 MB combined. CSV, TSV, Excel, JSON Lines, JSON, or Parquet.")
     if uploaded_files:
         try:
             if len(uploaded_files) > 5:
@@ -261,11 +213,12 @@ with st.sidebar:
                 st.session_state["dataset_revision"] = 1
                 st.session_state["upload_digest"] = digest
                 st.session_state["analysis_artifacts"] = {}
+                st.session_state.pop("pending_churn_question", None)
                 st.session_state["messages"] = [AIMessage(content="Your tables are ready. Ask a question or join related tables in the sidebar.")]
                 st.success(f"Loaded {len(tables)} table(s); starting with {next(iter(tables))}.")
         except Exception as exc:
             logger.warning("Dataset upload rejected or failed (%s)", type(exc).__name__)
-            st.error(str(exc) if isinstance(exc, ValueError) else "One of these files could not be read. Check that each is a valid CSV or Excel workbook.")
+            st.error(str(exc) if isinstance(exc, ValueError) else "One of these files could not be read. Check that it is a valid supported tabular file.")
 
     tables = st.session_state.get("related_tables", {})
     if len(tables) > 1:
@@ -419,7 +372,9 @@ if "pending_prompt" in st.session_state:
             "dataframe": frame, "dataframe_blob": st.session_state.get("dataframe_blob"), "plan": [], "code": "", "code_output": "",
             "explanation": "", "charts": [], "error": None, "retry_count": 0,
             "retry_history": [], "intent": "", "analysis_failed": False,
-            "share_values": share_values,
+            "share_values": share_values, "evidence": {}, "verification": [],
+            "clarification": "",
+            "clarification_context": st.session_state.get("pending_churn_question", ""),
         }
         try:
             if not consume_analysis_quota(st.session_state["user"]["user_id"]):
@@ -456,6 +411,12 @@ if "pending_prompt" in st.session_state:
             answer = "Analysis could not be completed. Please try again or check the service configuration."
         else:
             answer = result.get("explanation", "Analysis could not be completed.")
+            if result.get("intent") == "CLARIFY":
+                st.session_state["pending_churn_question"] = (
+                    st.session_state.get("pending_churn_question") or prompt
+                )
+            elif result.get("intent") in {"ANALYZE", "MODIFY", "ADVISE", "CHAT", "UNSUPPORTED"}:
+                st.session_state.pop("pending_churn_question", None)
             if (not result.get("analysis_failed") and result.get("intent") == "MODIFY"
                     and result.get("dataframe") is not None):
                 versions = st.session_state.get("dataset_versions", [])
@@ -468,6 +429,8 @@ if "pending_prompt" in st.session_state:
             artifact = {
                 "code_output": result.get("code_output", ""),
                 "charts": result.get("charts", []),
+                "evidence": result.get("evidence", {}),
+                "verification": result.get("verification", []),
                 "plan": result.get("plan", []), "code": result.get("code", ""),
                 "retry_history": result.get("retry_history", []),
                 "intent": result.get("intent", ""), "data_version": data_version,
@@ -525,6 +488,23 @@ for message_index, message in enumerate(st.session_state["messages"]):
                 with st.expander("Execution attempts"):
                     for attempt in artifact["retry_history"]:
                         st.caption(f"Attempt {attempt.get('attempt')}: {attempt.get('category')} — {attempt.get('error') or 'completed'}")
+
+            evidence = artifact.get("evidence", {})
+            if evidence:
+                with st.expander("Worker-captured execution evidence"):
+                    st.write({
+                        "Input shape (rows, columns)": evidence.get("input_shape"),
+                        "Output shape (rows, columns)": evidence.get("output_shape"),
+                        "Input columns": evidence.get("input_columns"),
+                        "Output columns": evidence.get("output_columns"),
+                        "Columns referenced in code": evidence.get("code_referenced_columns"),
+                        "Code SHA-256": evidence.get("code_sha256"),
+                    })
+                    st.caption("Shape and schema metadata are measured by the worker. Referenced columns are extracted from code syntax; this does not prove they were accessed at runtime or that the analysis answers the question.")
+            if artifact.get("verification"):
+                st.markdown("**Deterministic calculations**")
+                st.json(artifact["verification"])
+                st.caption("These values were recomputed by the worker's fixed helper functions. They verify the stated operation on the supplied data, not that the selected columns, filters, or interpretation match your question.")
 
 if prompt := st.chat_input("What would you like to know?", max_chars=2000):
     st.session_state["messages"].append(HumanMessage(content=prompt))
