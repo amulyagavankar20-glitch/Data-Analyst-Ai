@@ -62,3 +62,39 @@ def test_worker_exposes_vetted_statistics_and_visualization_helpers():
     assert response["ok"] is True
     assert "p_value" in response["output"]
     assert len(response["charts"]) == 1
+
+
+def test_worker_records_execution_evidence_and_deterministic_calculations():
+    frame = pd.DataFrame({"group": ["a", "a", "b"], "amount": [10.0, None, 30.0]})
+    response = _run_worker(
+        frame,
+        "result = verify.grouped(df, 'group', 'amount', operation='mean')\n"
+        "print(result)\nverify.row_count(df)",
+    )
+    assert response["ok"] is True
+    assert response["evidence"]["input_shape"] == [3, 2]
+    assert response["evidence"]["output_shape"] == [3, 2]
+    assert response["evidence"]["code_referenced_columns"] == ["group", "amount"]
+    assert len(response["evidence"]["code_sha256"]) == 64
+    assert response["verification"][0]["operation"] == "grouped_mean"
+    assert response["verification"][0]["groups"] == [
+        {"group": "a", "value": 10.0}, {"group": "b", "value": 30.0}
+    ]
+    assert response["verification"][1] == {"operation": "row_count", "value": 3, "rows": 3}
+
+
+def test_worker_labels_blank_plotly_axes_from_hover_fields_and_records_duplicates():
+    frame = pd.DataFrame({"status": ["Active", "Churned", "Active"],
+                          "count": [2, 1, 2]})
+    response = _run_worker(
+        frame,
+        "result = verify.duplicates(df)\n"
+        "print(result)\n"
+        "fig = px.bar(df, x='status', y='count', title='Class balance')\n"
+        "fig.update_layout(xaxis_title='')",
+    )
+    assert response["ok"] is True
+    assert response["verification"][0]["duplicate_rows"] == 1
+    figure = json.loads(response["charts"][0])
+    assert figure["layout"]["xaxis"]["title"]["text"] == "status"
+    assert figure["layout"]["yaxis"]["title"]["text"] == "count"
