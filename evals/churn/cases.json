@@ -1,0 +1,142 @@
+[
+  {
+    "id": "C01",
+    "split": "dev",
+    "intent": "ANALYZE",
+    "question": "What percentage of customers in this dataset have churned?",
+    "rubric": "Use churned as the target; report the number of churned records, denominator, and percentage. Do not confuse customer count with churn rate."
+  },
+  {
+    "id": "C02",
+    "split": "dev",
+    "intent": "ANALYZE",
+    "question": "Show the count and percentage of churned and active customers.",
+    "rubric": "Report both classes, correct counts, and percentages that sum to approximately 100%."
+  },
+  {
+    "id": "C03",
+    "split": "dev",
+    "intent": "ANALYZE",
+    "question": "Make a clear plot showing the balance of churned versus active customers.",
+    "rubric": "Return at least one chart with churn status as the category and customer count or share as the value; chart labels and title should be clear."
+  },
+  {
+    "id": "C04",
+    "split": "dev",
+    "intent": "ANALYZE",
+    "question": "Compare churn rates across the monthly, annual, and two-year plans.",
+    "rubric": "Calculate churned / customers within each plan, not each plan's share of all churned customers. Include group sizes."
+  },
+  {
+    "id": "C05",
+    "split": "dev",
+    "intent": "ANALYZE",
+    "question": "Which plan has the highest churn rate? Rank the plans and include their sample sizes.",
+    "rubric": "Rank by within-plan churn rate and include denominators so small groups are not presented without context."
+  },
+  {
+    "id": "C06",
+    "split": "dev",
+    "intent": "ANALYZE",
+    "question": "Does churn differ between the East and West regions?",
+    "rubric": "Compare within-region churn rates and group sizes. Describe an association, not a causal effect."
+  },
+  {
+    "id": "C07",
+    "split": "dev",
+    "intent": "ANALYZE",
+    "question": "Compare churn rates for customers with and without auto-renewal.",
+    "rubric": "Use within-group rates with denominators; note that the result is observational."
+  },
+  {
+    "id": "C08",
+    "split": "dev",
+    "intent": "ANALYZE",
+    "question": "What is the average monthly fee for active and churned customers?",
+    "rubric": "Report mean monthly_fee separately by churned status and state how missing fee values were handled."
+  },
+  {
+    "id": "C09",
+    "split": "dev",
+    "intent": "ANALYZE",
+    "question": "Compare median tenure for active and churned customers.",
+    "rubric": "Report median tenure_months by churned status, with units and group sizes."
+  },
+  {
+    "id": "C10",
+    "split": "dev",
+    "intent": "ANALYZE",
+    "question": "Which payment methods have the highest churn rates?",
+    "rubric": "Rank payment methods by within-method churn rate and show group sizes. Avoid implying payment method causes churn."
+  },
+  {
+    "id": "C11",
+    "split": "dev",
+    "intent": "ANALYZE",
+    "question": "Group customers into tenure bands and compare their churn rates.",
+    "rubric": "Define non-overlapping tenure bands that cover the data, report denominators, and calculate a rate within each band."
+  },
+  {
+    "id": "C12",
+    "split": "dev",
+    "intent": "ANALYZE",
+    "question": "Are support tickets associated with churn? Quantify the relationship carefully.",
+    "rubric": "Use a defensible association summary and caveat that association is not causation; do not claim tickets caused churn."
+  },
+  {
+    "id": "C13",
+    "split": "dev",
+    "intent": "ANALYZE",
+    "question": "Which columns contain missing values, and how many are missing in each?",
+    "rubric": "List columns with nonzero missing counts and correct counts; do not silently impute values."
+  },
+  {
+    "id": "C14",
+    "split": "dev",
+    "intent": "ANALYZE",
+    "question": "How many exact duplicate rows are in the dataset?",
+    "rubric": "Count exact duplicate rows using all columns and distinguish duplicate rows from repeated customer IDs."
+  },
+  {
+    "id": "C15",
+    "split": "holdout",
+    "intent": "ANALYZE",
+    "question": "Compare churn rates across signup cohorts.",
+    "rubric": "Group by signup_cohort and calculate within-cohort rates with denominators. Do not call this a retention curve."
+  },
+  {
+    "id": "C16",
+    "split": "holdout",
+    "intent": "ANALYZE",
+    "question": "How many customers changed from an annual plan to a monthly plan during 2025?",
+    "rubric": "Explain that the current plan snapshot does not contain plan-change events or historical plan values; do not treat current plan as proof of a transition. Ask for dated plan history."
+  },
+  {
+    "id": "C17",
+    "split": "holdout",
+    "intent": "ADVISE",
+    "question": "Which machine-learning models should I try to predict churn with these columns?",
+    "rubric": "Treat churned as a likely binary target but state the assumption; recommend a simple baseline and suitable model families, use stratified validation, and warn that churn_date and post-outcome fields can leak the target. Do not claim a model was trained."
+  },
+  {
+    "id": "C18",
+    "split": "holdout",
+    "intent": "ADVISE",
+    "question": "Suggest a sensible target and feature set for a churn model, and point out likely leakage.",
+    "rubric": "Identify churned as the likely target; distinguish customer identifiers from features; flag churn_date and any post-churn information as potential leakage."
+  },
+  {
+    "id": "C19",
+    "split": "holdout",
+    "intent": "ANALYZE",
+    "question": "Plot monthly fee distributions for active and churned customers.",
+    "rubric": "Return a distribution/comparison chart using monthly_fee and churned, with clear title, axis labels, and readable class labels."
+  },
+  {
+    "id": "C20",
+    "split": "holdout",
+    "intent": "MODIFY",
+    "question": "Remove exact duplicate rows and tell me how many rows were removed.",
+    "rubric": "Remove only exact duplicate rows, report before/after row counts and rows removed, and return the updated dataframe."
+  }
+]
