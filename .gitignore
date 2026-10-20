@@ -40,6 +40,9 @@ ENV/
 !.streamlit/
 !.streamlit/config.toml
 
+# Local evaluation traces and reviewer annotations
+evals/churn/results/
+
 # OS
 .DS_Store
 Thumbs.db
