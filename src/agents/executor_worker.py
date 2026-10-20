@@ -2,7 +2,10 @@
 import contextlib
 import io
 import base64
+import ast
+import hashlib
 import json
+import re
 import sys
 
 import numpy as np
@@ -11,12 +14,51 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.basedatatypes import BaseFigure
 from plotly.subplots import make_subplots
-from src.agents.toolkit import stats, ts, viz
+from src.agents.toolkit import churn, make_verifier, stats, ts, viz
 
 MAX_CODE_OUTPUT = 1024 * 1024
 MAX_RESPONSE = 48 * 1024 * 1024
 MAX_CHARTS = 4
 MAX_CHART_BYTES = 4 * 1024 * 1024
+
+
+def referenced_columns(code, columns):
+    """Return schema columns explicitly named in code, in dataset order."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return []
+    names = {str(column) for column in columns}
+    referenced = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value in names:
+            referenced.add(node.value)
+        elif isinstance(node, ast.Attribute) and node.attr in names:
+            referenced.add(node.attr)
+    return [str(column) for column in columns if str(column) in referenced]
+
+
+def _inferred_axis_label(figure, dimension):
+    token = "x" if dimension == "x" else "y"
+    for trace in figure.data:
+        template = getattr(trace, "hovertemplate", None)
+        if not isinstance(template, str):
+            continue
+        match = re.search(r"(?:^|<br>)\s*([^<>=]+?)=%\{" + token + r"(?:[|:][^}]*)?\}", template)
+        if match:
+            label = match.group(1).strip()
+            if label:
+                return label
+    return "Category" if dimension == "x" else "Value"
+
+
+def _ensure_axis_titles(figure):
+    """Restore useful axis labels when generated Plotly code leaves them blank."""
+    for dimension in ("x", "y"):
+        axis = getattr(figure.layout, dimension + "axis", None)
+        title = getattr(getattr(axis, "title", None), "text", None)
+        if not isinstance(title, str) or not title.strip():
+            figure.update_layout(**{dimension + "axis_title": _inferred_axis_label(figure, dimension)})
 
 
 def safe_error(exc, dataframe=None):
@@ -59,10 +101,14 @@ def main():
         if len(dataset) > 16 * 1024 * 1024:
             raise OverflowError("Dataset exceeds worker limit")
         dataframe = pd.read_parquet(io.BytesIO(dataset))
+        input_shape = list(dataframe.shape)
+        input_columns = [str(column) for column in dataframe.columns]
         output = LimitedOutput()
+        verifications = []
         local_scope = {"df": dataframe, "pd": pd, "np": np, "px": px,
                        "go": go, "make_subplots": make_subplots,
-                       "stats": stats, "ts": ts, "viz": viz}
+                       "stats": stats, "ts": ts, "viz": viz, "churn": churn,
+                       "verify": make_verifier(verifications)}
         with contextlib.redirect_stdout(output):
             exec(request["code"], local_scope, local_scope)
         if "result" in local_scope:
@@ -74,6 +120,7 @@ def main():
                 continue
             if len(charts) >= MAX_CHARTS:
                 break
+            _ensure_axis_titles(value)
             chart_json = value.to_json(validate=True)
             if len(chart_json.encode("utf-8")) > MAX_CHART_BYTES:
                 raise OverflowError("Chart output exceeded limit")
@@ -84,7 +131,14 @@ def main():
         if frame_buffer.tell() > 16 * 1024 * 1024:
             raise OverflowError("Dataset output exceeds worker limit")
         response = {"ok": True, "output": output.getvalue(), "charts": charts,
-                    "dataframe": base64.b64encode(frame_buffer.getvalue()).decode("ascii")}
+                    "dataframe": base64.b64encode(frame_buffer.getvalue()).decode("ascii"),
+                    "evidence": {"input_shape": input_shape,
+                                 "output_shape": list(local_scope["df"].shape),
+                                 "input_columns": input_columns,
+                                 "output_columns": [str(column) for column in local_scope["df"].columns],
+                                 "code_referenced_columns": referenced_columns(request["code"], dataframe.columns),
+                                 "code_sha256": hashlib.sha256(request["code"].encode("utf-8")).hexdigest()},
+                    "verification": verifications}
     except BaseException as exc:
         limited = isinstance(exc, (MemoryError, OverflowError, TimeoutError))
         response = {"ok": False, "category": "limit" if limited else "code",
