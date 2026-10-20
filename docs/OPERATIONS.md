@@ -53,7 +53,7 @@ Check `DATABASE_URL`, URL-encode reserved password characters, confirm the Postg
 
 ### Dataset upload rejected
 
-Confirm CSV/XLSX format, per-file upload limit (20 MiB), row and column caps (500,000 and 200), valid tabular headers, and normalized Parquet cap (16 MiB by default). Increase caps only after reviewing app memory, proxy limits, and worker request sizing.
+Confirm the file is CSV, TSV, XLS/XLSX, JSON records/column arrays, JSONL/NDJSON, or Parquet; combined upload size is limited to 20 MiB, each table to 500,000 rows and 200 columns, and normalized Parquet to 16 MiB by default. Excel currently reads the active sheet. Increase caps only after reviewing app memory, proxy limits, and worker request sizing.
 
 ## Deployment maintenance
 
