@@ -1,16 +1,19 @@
 # AI Data Analyst
 
-AI Data Analyst is a Streamlit application for exploring CSV and Excel datasets with natural-language questions. It uses PostgreSQL for accounts and session records, Groq for language-model tasks, and a separately operated isolated worker for generated Python analysis.
+AI Data Analyst is a Streamlit application for exploring tabular datasets with natural-language questions. It uses PostgreSQL for accounts and session records, Groq for language-model tasks, and a separately operated isolated worker for generated Python analysis.
 
 ## What it does
 
-- Upload and inspect CSV/XLSX tables, review schema and data-quality summaries, and optionally join related tables.
+- Upload and inspect CSV, TSV, XLS/XLSX, JSON records, JSON Lines, or Parquet tables; review schema and data-quality summaries, and optionally join related tables.
 - Ask questions for analysis, visualization, dataset-grounded advice, or supported dataset changes.
+- For churn analysis, ask the user to define an ambiguous outcome before computing rates; vetted helpers report snapshot rates, cohorts, and segment comparisons.
 - Run generated analysis code in a separate worker container with resource limits and no network access.
+- Inspect worker-captured input/output shapes, schema, referenced column names, and code hash; supported simple calculations can include deterministic helper results.
 - Render interactive Plotly charts, inspect computation details, download a dataset snapshot, or export a notebook.
 - Register and sign in using PostgreSQL-backed accounts. Registration can be restricted with an invite code.
 
 The service does not train or deploy machine-learning models. Its recommendations are guidance based on the metadata provided; they are not evidence that a model was trained or evaluated.
+Worker evidence describes execution metadata and code references. Deterministic helper output verifies the stated operation on the input data, not that generated filters or interpretations answer the user's intent.
 
 ## Architecture
 
@@ -131,7 +134,7 @@ Executor settings are documented in [Deployment](docs/DEPLOYMENT.md#executor-ser
 
 ## Data handling overview
 
-- Uploads are limited to 20 MB per file, CSV/XLSX, at most 500,000 rows and 200 columns; converted Parquet data is capped at 16 MB by default.
+- Uploads accept CSV, TSV, XLS, XLSX, JSON row objects/column arrays, JSONL/NDJSON row objects, and Parquet. The combined upload is limited to 20 MiB, with at most 500,000 rows and 200 columns per table; normalized Parquet data is capped at 16 MiB by default. Excel currently imports the active sheet.
 - Tier 0 shares schema, types, shape, and the question with Groq. Tier 1 also shares a local aggregate profile. Tier 2 may include up to three sample rows and computed output. Choose the lowest tier suitable for your data.
 - Successful modification requests commit a new session DataFrame version. Analysis requests do not commit generated mutations. The app keeps up to five prior versions for undo and supports restoring the uploaded snapshot.
 - Session datasets live in Streamlit session state; they are not durable database records. A browser refresh or server restart can end a session.
@@ -152,10 +155,12 @@ Executor integration tests require Docker and the worker image. They are environ
 
 ## Documentation
 
+- [Project setup and architecture](SETUP.md): local Windows/Conda setup, PostgreSQL, Groq, Docker executor, service startup, and request flow.
 - [Deployment guide](docs/DEPLOYMENT.md): database migration, image builds, runtime configuration, reverse proxy, health checks, and upgrades.
 - [Security and privacy](docs/SECURITY.md): trust boundaries, dataset sharing, executor isolation, and operational safeguards.
 - [Development guide](docs/DEVELOPMENT.md): environment setup, tests, linting, and contribution workflow.
 - [Operations guide](docs/OPERATIONS.md): startup, health checks, backups, logs, and troubleshooting.
+- [Churn evaluation starter](evals/churn/README.md): 20 synthetic churn questions, a development/holdout split, and manual scoring with confidence intervals.
 - [Improvement plan](IMPROVEMENT_PLAN.md): broader project roadmap and planned work; items there are not necessarily implemented.
 
 ## Current limitations
@@ -164,4 +169,4 @@ Executor integration tests require Docker and the worker image. They are environ
 - PostgreSQL stores accounts, login/session metadata, and usage counts, not uploaded datasets.
 - A production-ready executor requires operator-provisioned `runsc` or rootless Docker and TLS/network controls; a Docker image alone does not provide the complete isolation boundary.
 - Model recommendations are advisory; the system does not automatically train, validate, or deploy a model.
-- Supported formats are CSV and XLSX; multi-sheet Excel imports are treated as separate tables where supported by the upload flow.
+- JSON import accepts an array of row objects or an object of equal-length column arrays. JSONL/NDJSON requires one row object per non-empty line. Excel currently reads the active sheet only; multi-sheet import is not implemented.
