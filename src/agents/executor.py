@@ -72,7 +72,9 @@ def run_isolated_code(code, dataframe, dataset_blob=None):
         updated_df = pd.read_parquet(BytesIO(output))
         charts = [pio.from_json(chart) for chart in result.get("charts", [])]
         return {"output": result.get("output", "")[:1_000_000], "charts": charts,
-                "dataframe": updated_df, "dataframe_blob": output}
+                "dataframe": updated_df, "dataframe_blob": output,
+                "evidence": result.get("evidence", {}),
+                "verification": result.get("verification", [])}
     except ExecutorError:
         raise
     except HTTPError as exc:
