@@ -19,6 +19,15 @@ def test_code_validation_rejects_imports_and_introspection():
     assert validate_code("df['Age'].mean()")
 
 
+def test_analysis_code_cannot_mutate_dataframe_but_modify_intent_can():
+    mutation = "df['Age'] = df['Age'].fillna(df['Age'].median())\nresult = df['Age'].mean()"
+    inplace_mutation = "df.dropna(inplace=True)\nresult = len(df)"
+    assert validate_code(mutation)
+    assert validate_code(inplace_mutation)
+    assert validate_code(mutation, allow_data_mutation=True) is None
+    assert validate_code("analysis_df = df.copy()\nanalysis_df['Age'] = 0\nresult = analysis_df['Age'].mean()") is None
+
+
 def test_retry_router_retries_only_within_limit():
     assert route_execution({"error": "failure", "retry_count": 1}) == "retry"
     assert route_execution({"error": "failure", "retry_count": 3}) == "failure"
@@ -63,6 +72,22 @@ def test_dataset_based_machine_learning_recommendation_routes_to_advice():
     assert route_query({**state, **classified}) == "direct"
 
 
+def test_metric_comparisons_cannot_be_misrouted_as_dataset_advice():
+    questions = [
+        "Does churn differ between the East and West regions?",
+        "Which payment methods have the highest churn rates?",
+    ]
+    frame = pd.DataFrame({"churned": [False, True], "region": ["East", "West"],
+                          "payment_method": ["card", "invoice"]})
+    for question in questions:
+        state = {"messages": [HumanMessage(content=question)],
+                 "dataset_schema": "churned: boolean churn outcome", "dataframe": frame}
+        fake_llm = type("FakeLLM", (), {"invoke": lambda self, _messages: AIMessage(content="ADVISE")})()
+        with patch("src.agents.graph.llm", fake_llm):
+            classified = query_node(state)
+        assert classified["intent"] == "ANALYZE"
+
+
 def test_dataset_advice_uses_schema_without_executor():
     state = {"intent": "ADVISE", "dataset_schema": "text: string; label: category",
              "messages": [HumanMessage(content="Which models should I try?")]}
@@ -86,6 +111,69 @@ def test_classifier_failure_does_not_trigger_analysis():
         classified = query_node(state)
     assert classified["intent"] == "ERROR"
     assert route_query({**state, **classified}) == "direct"
+
+
+def test_empty_classifier_response_is_handled_as_service_error():
+    state = {"messages": [HumanMessage(content="hello")], "dataset_schema": "Age: int"}
+    fake_llm = type("EmptyLLM", (), {"invoke": lambda self, _messages: AIMessage(content="   ")})()
+    with patch("src.agents.graph.llm", fake_llm):
+        classified = query_node(state)
+    assert classified["intent"] == "ERROR"
+    assert route_query({**state, **classified}) == "direct"
+
+
+def test_churn_query_asks_for_ambiguous_target_definition():
+    frame = pd.DataFrame({"Churn": ["Yes", "No"],
+                          "Status": ["Active", "Inactive"],
+                          "Plan": ["monthly", "annual"]})
+    state = {"messages": [HumanMessage(content="Compare churn by plan")],
+             "dataset_schema": "Churn, Status, Plan", "dataframe": frame}
+    fake_llm = type("FakeLLM", (), {"invoke": lambda self, _messages: AIMessage(content="ANALYZE")})()
+    with patch("src.agents.graph.llm", fake_llm):
+        classified = query_node(state)
+    assert classified["intent"] == "CLARIFY"
+    assert "Churn" in classified["clarification"]
+    result = direct_node({**state, **classified})
+    assert result["explanation"] == classified["clarification"]
+
+
+def test_churn_query_uses_explicit_data_dictionary_definition():
+    frame = pd.DataFrame({"churn_date": [None, "2026-01-01"],
+                          "churned": [False, True],
+                          "plan": ["monthly", "annual"]})
+    schema = (
+        "churn_date: cancellation date for churned customers; blank for active customers.\n"
+        "churned: current binary churn outcome (true means churned).\n"
+        "plan: subscription term."
+    )
+    state = {"messages": [HumanMessage(content="What percentage of customers churned?")],
+             "dataset_schema": schema, "dataframe": frame}
+    fake_llm = type("FakeLLM", (), {"invoke": lambda self, _messages: AIMessage(content="ANALYZE")})()
+    with patch("src.agents.graph.llm", fake_llm):
+        classified = query_node(state)
+    assert classified["intent"] == "ANALYZE"
+    assert classified["clarification"] == ""
+
+
+def test_churn_clarification_reply_resumes_original_request():
+    frame = pd.DataFrame({"ChurnStatus": ["Yes", "No"], "Plan": ["monthly", "annual"]})
+    state = {
+        "messages": [HumanMessage(content="Compare churn by plan"),
+                     AIMessage(content="Which column defines churn?"),
+                     HumanMessage(content="ChurnStatus; Yes means churn.")],
+        "dataset_schema": "ChurnStatus, Plan", "dataframe": frame,
+        "clarification_context": "Compare churn by plan",
+    }
+
+    class FakeLLM:
+        def invoke(self, messages):
+            assert "Original data request: Compare churn by plan" in messages[1].content
+            return AIMessage(content="ANALYZE")
+
+    with patch("src.agents.graph.llm", FakeLLM()):
+        classified = query_node(state)
+    assert classified["intent"] == "ANALYZE"
+    assert classified["clarification"] == ""
 
 
 def test_result_values_are_not_sent_for_summary_without_opt_in():
